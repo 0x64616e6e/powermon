@@ -72,3 +72,7 @@ Debian sets `perf_event_paranoid=3` and its kernel patch then admits only `CAP_S
 counters and the database, then `--user dann` switches uid/gid/groups for good, which clears every
 capability; the recorder verifies that and refuses to run otherwise. It sees a read-only file system
 except its state and runtime directories, and has no network.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
