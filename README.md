@@ -62,10 +62,25 @@ Durations: `90s 30m 6h 2d 1w` or `all`; `--until` takes the same form as "time a
 
 ## Install
 
+### Downloads
+
+Each [release](https://github.com/0x64616e6e/powermon/releases) carries a Debian/Ubuntu package, a
+static x86_64 Linux binary (musl, no dependencies) and `SHA256SUMS`:
+
+```
+curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.1.0/powermon_0.1.0-1_amd64.deb
+curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.1.0/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+sudo apt install ./powermon_0.1.0-1_amd64.deb
+```
+
+The static binary runs anywhere for the query commands and `now`; to record in the background, use
+the package or `contrib/install.sh` (which builds from source), since both also set up the service
+and its system user.
+
 ### Debian / Ubuntu package
 
-Download the `.deb` from the releases page, or build it (needs zig 0.16 in `PATH`, plus
-`debhelper`):
+Build it yourself (needs zig 0.16 in `PATH`, plus `debhelper`):
 
 ```
 dpkg-buildpackage -us -uc -b        # writes ../powermon_<version>_amd64.deb
