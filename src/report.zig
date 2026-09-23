@@ -112,7 +112,8 @@ pub fn initTime() void {
 }
 
 // ---- statistics ----
-pub fn stats(recs: []const db.Record, interval_ms: u32) void {
+pub fn stats(recs: []const db.Record, interval_ms: u32, width: usize) void {
+    const wide = width >= 100; // room for the description column
     var b1: [32]u8 = undefined;
     var b2: [32]u8 = undefined;
     var b3: [32]u8 = undefined;
@@ -126,7 +127,7 @@ pub fn stats(recs: []const db.Record, interval_ms: u32) void {
 
     const vals = std.heap.page_allocator.alloc(f64, recs.len) catch return;
     defer std.heap.page_allocator.free(vals);
-    out("{s:<7} {s:<4} {s:>8} {s:>8} {s:>8} {s:>8} {s:>8}   {s}\n", .{ "metric", "unit", "min", "p50", "mean", "p95", "max", "" });
+    out("{s:<7} {s:<4} {s:>8} {s:>8} {s:>8} {s:>8} {s:>8}\n", .{ "metric", "unit", "min", "p50", "mean", "p95", "max" });
     for (&metrics) |*m| {
         var n: usize = 0;
         var sum: f64 = 0;
@@ -138,7 +139,8 @@ pub fn stats(recs: []const db.Record, interval_ms: u32) void {
         if (n == 0) continue;
         const s = vals[0..n];
         std.mem.sort(f64, s, {}, std.sort.asc(f64));
-        out("{s:<7} {s:<4} {d:>8.2} {d:>8.2} {d:>8.2} {d:>8.2} {d:>8.2}   {s}\n", .{ m.name, m.unit, s[0], pct(s, 0.5), sum / @as(f64, @floatFromInt(n)), pct(s, 0.95), s[n - 1], m.desc });
+        out("{s:<7} {s:<4} {d:>8.2} {d:>8.2} {d:>8.2} {d:>8.2} {d:>8.2}", .{ m.name, m.unit, s[0], pct(s, 0.5), sum / @as(f64, @floatFromInt(n)), pct(s, 0.95), s[n - 1] });
+        if (wide) out("   {s}\n", .{m.desc}) else sys.outRaw("\n");
     }
 
     // energy: integrate each sample over the interval it closes; skip gaps (suspend, recorder down)
@@ -182,7 +184,9 @@ pub fn stats(recs: []const db.Record, interval_ms: u32) void {
     if (t_bat > 0) {
         const mean = e_dis / (@as(f64, @floatFromInt(t_bat)) / 3.6e6);
         out(", mean {d:.2} W", .{mean});
-        if (batteryFullWh()) |full| if (mean > 0) out(" -> {d:.1} h from a full {d:.1} Wh battery", .{ full / mean, full });
+        if (batteryFullWh()) |full| if (mean > 0) {
+            if (wide) out(", {d:.1} h per full charge ({d:.1} Wh)", .{ full / mean, full }) else out("\n                  {d:.1} h per full charge ({d:.1} Wh)", .{ full / mean, full });
+        };
     }
     out("\n  on AC           {s:<12} {d:>7.2} Wh charged\n", .{ fmtDur(&b1, t_ac), e_chg });
     if (t_psys > 0) out("  platform (psys) {s:<12} {d:>7.2} Wh, CPU package {d:.2} Wh\n", .{ fmtDur(&b1, t_psys), e_psys, e_pkg });
@@ -266,23 +270,55 @@ pub fn plot(recs: []const db.Record, m: *const Metric, width: usize, height: usi
         out("{s}: no values in range\n", .{m.name});
         return;
     }
-    if (lo > 0 and m.unit[0] != 'C') lo = 0; // anchor power/percent charts at zero
+    // Bars grow from a baseline: zero when the range allows it (power, percent), else the minimum
+    // (temperature). With mixed signs zero sits on a row boundary: positive bars rise from it with
+    // lower-eighth blocks, negative bars hang from it with upper blocks.
+    if (m.unit[0] != 'C') {
+        if (lo > 0) lo = 0;
+        if (hi < 0) hi = 0;
+    }
     if (hi - lo < 1e-9) hi = lo + 1;
+    var neg_rows: usize = 0;
+    if (lo < 0 and hi > 0) {
+        const want = @as(f64, @floatFromInt(height)) * (-lo) / (hi - lo);
+        neg_rows = std.math.clamp(@as(usize, @intFromFloat(@round(want))), 1, height - 1);
+        const per_row = @max(hi / @as(f64, @floatFromInt(height - neg_rows)), -lo / @as(f64, @floatFromInt(neg_rows)));
+        hi = per_row * @as(f64, @floatFromInt(height - neg_rows));
+        lo = -per_row * @as(f64, @floatFromInt(neg_rows));
+    } else if (hi <= 0 and lo < 0) neg_rows = height;
+    const base: f64 = if (lo < 0) 0 else lo;
+    const row_h = (hi - lo) / @as(f64, @floatFromInt(height));
     out("{s} ({s}) - {s}\n", .{ m.name, m.unit, m.desc });
-    const blocks = [_][]const u8{ " ", "\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}" };
+    const lower = [_][]const u8{ " ", "\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}" };
     var row: usize = 0;
     while (row < height) : (row += 1) {
-        const level_top = height - row; // rows counted from the bottom, 1-based
-        if (row == 0) out("{d:>7.1} \u{2502}", .{hi}) else if (row == height - 1) out("{d:>7.1} \u{2502}", .{lo}) else if (row == height / 2) out("{d:>7.1} \u{2502}", .{(hi + lo) / 2}) else out("        \u{2502}", .{});
+        const cell_top = hi - @as(f64, @floatFromInt(row)) * row_h;
+        const cell_bot = cell_top - row_h;
+        const zero_row = neg_rows > 0 and neg_rows < height and row == height - neg_rows; // first row below zero
+        if (row == 0) out("{d:>7.1} \u{2502}", .{hi}) else if (row == height - 1) out("{d:>7.1} \u{2502}", .{lo}) else if (zero_row) out("{d:>7.1} \u{2502}", .{@as(f64, 0)}) else if (neg_rows == 0 and row == height / 2) out("{d:>7.1} \u{2502}", .{(hi + lo) / 2}) else out("        \u{2502}", .{});
         for (bk) |b| {
             if (b.n == 0) {
                 sys.outRaw(" ");
                 continue;
             }
             const v = b.sum / @as(f64, @floatFromInt(b.n));
-            const eighths: i64 = @intFromFloat(@round((v - lo) / (hi - lo) * @as(f64, @floatFromInt(height * 8))));
-            const fill = std.math.clamp(eighths - @as(i64, @intCast((level_top - 1) * 8)), 0, 8);
-            sys.outRaw(blocks[@intCast(fill)]);
+            if (v >= base) {
+                // rising bar [base, v]: covers this cell from its bottom if the cell is above base
+                if (cell_bot < base - 1e-9 or v <= cell_bot) {
+                    sys.outRaw(" ");
+                    continue;
+                }
+                const f = std.math.clamp((v - cell_bot) / row_h, 0, 1);
+                sys.outRaw(lower[@intFromFloat(@round(f * 8))]);
+            } else {
+                // hanging bar [v, base]: covers this cell from its top if the cell is below base
+                if (cell_top > base + 1e-9 or v >= cell_top) {
+                    sys.outRaw(" ");
+                    continue;
+                }
+                const f = std.math.clamp((cell_top - v) / row_h, 0, 1);
+                sys.outRaw(if (f >= 0.875) "\u{2588}" else if (f >= 0.375) "\u{2580}" else if (f >= 0.125) "\u{2594}" else " ");
+            }
         }
         sys.outRaw("\n");
     }
@@ -334,8 +370,16 @@ pub fn svg(recs: []const db.Record, names: []const []const u8, interval_ms: u32)
         const top = y0 + 20;
         out("<rect x=\"{d}\" y=\"{d}\" width=\"{d}\" height=\"{d}\" fill=\"#121417\" stroke=\"#2E333C\"/>\n", .{ ML, top, plot_w, PH });
         if (lo == std.math.inf(f64)) continue;
-        if (lo > 0 and m.unit[0] != 'C') lo = 0;
+        if (m.unit[0] != 'C') {
+            if (lo > 0) lo = 0;
+            if (hi < 0) hi = 0;
+        }
         if (hi - lo < 1e-9) hi = lo + 1;
+        if (lo < 0 and hi > 0) {
+            const zy = @as(f64, @floatFromInt(top + PH)) - (0 - lo) / (hi - lo) * @as(f64, @floatFromInt(PH));
+            out("<line x1=\"{d}\" x2=\"{d}\" y1=\"{d:.1}\" y2=\"{d:.1}\" stroke=\"#6B675C\" stroke-dasharray=\"3 3\"/>\n", .{ ML, ML + plot_w, zy, zy });
+            out("<text x=\"{d}\" y=\"{d:.1}\" fill=\"#A39C89\" text-anchor=\"end\">0</text>\n", .{ ML - 6, zy + 4 });
+        }
         out("<text x=\"{d}\" y=\"{d}\" fill=\"#A39C89\" text-anchor=\"end\">{d:.1}</text>\n", .{ ML - 6, top + 10, hi });
         out("<text x=\"{d}\" y=\"{d}\" fill=\"#A39C89\" text-anchor=\"end\">{d:.1}</text>\n", .{ ML - 6, top + PH, lo });
         out("<polyline fill=\"none\" stroke=\"#FFA028\" stroke-width=\"1.2\" points=\"", .{});

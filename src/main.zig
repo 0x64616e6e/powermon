@@ -11,7 +11,7 @@ const DEFAULT_DB = "/var/lib/powermon/power.db";
 const DEFAULT_PID = "/run/powermon/pid";
 const FLUSH_FIFO = "/run/powermon/flush";
 const LATEST = "/run/powermon/latest";
-const version = "0.2.0";
+const version = "0.2.1";
 
 const usage =
     \\usage: powermon <command> [options]
@@ -32,7 +32,8 @@ const usage =
     \\  --until DUR         end of range, as time ago (default now)
     \\  --interval SEC      record: seconds between samples (default 5)
     \\  --flush N           record: samples buffered in memory between writes (default 60)
-    \\  --width N --height N   plot size (default terminal width x 12)
+    \\  --width N --height N   plot size (default terminal width x 12); stats drops its
+    \\                      description column below 100 columns
     \\  --no-flush          query without asking the recorder to write its buffer first
     \\  --user NAME         record: started as root, open the perf counters, then run as NAME
     \\                      with no capabilities (Debian's perf_event_paranoid=3 needs root to open them)
@@ -340,7 +341,7 @@ fn query(o: *const Opts, kind: Kind) u8 {
     const from = if (since == std.math.maxInt(i64)) std.math.minInt(i64) else t - since;
     const recs = rd.range(from, t - o.until_ms + 1);
     switch (kind) {
-        .stats => report.stats(recs, rd.header.interval_ms),
+        .stats => report.stats(recs, rd.header.interval_ms, o.width orelse (sys.termWidth() orelse 200)),
         .csv => report.csv(recs),
         .plot => {
             const width = o.width orelse (sys.termWidth() orelse 100);

@@ -1,3 +1,13 @@
+powermon (0.2.1-1) unstable; urgency=medium
+
+  * plot: bars grow from a zero baseline; with mixed signs (battery charging
+    and discharging) negative bars hang below a labelled zero line.
+  * svg: dashed zero line for mixed-sign series.
+  * stats: honours --width (or the terminal width); below 100 columns it
+    drops the description column and wraps the battery-life estimate.
+
+ -- 0x64616e6e <daniel@este.systems>  Wed, 23 Sep 2026 17:25:00 +0400
+
 powermon (0.2.0-1) unstable; urgency=medium
 
   * bar: one short line for status bars (platform power, time left on
