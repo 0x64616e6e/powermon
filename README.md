@@ -56,6 +56,7 @@ powermon plot bat psys --since 2h # terminal charts
 powermon svg --since 24h > day.svg
 powermon csv --since all > power.csv
 powermon info
+powermon bar                      # "9.8W 5h12m" for polybar, i3status, waybar
 ```
 
 Durations: `90s 30m 6h 2d 1w` or `all`; `--until` takes the same form as "time ago".
@@ -114,6 +115,10 @@ only `CAP_SYS_ADMIN` to `perf_event_open` (`CAP_PERFMON` is not enough). It then
 and groups to the `powermon` system user for good, which clears every capability, and refuses to run
 if any survive. It has no network and sees a read-only file system except `/var/lib/powermon` and
 `/run/powermon`.
+
+After every sample the recorder also overwrites `/run/powermon/latest` (48 bytes on tmpfs, memory
+only) with that sample; `powermon bar` reads it, so a status bar can refresh every few seconds without
+forcing database writes.
 
 Queries from any user ask the recorder to write its in-memory buffer by writing a byte to the FIFO
 `/run/powermon/flush` (at most one flush per second), so results always include the last few seconds.

@@ -10,7 +10,8 @@ const out = sys.out;
 const DEFAULT_DB = "/var/lib/powermon/power.db";
 const DEFAULT_PID = "/run/powermon/pid";
 const FLUSH_FIFO = "/run/powermon/flush";
-const version = "0.1.0";
+const LATEST = "/run/powermon/latest";
+const version = "0.2.0";
 
 const usage =
     \\usage: powermon <command> [options]
@@ -22,6 +23,7 @@ const usage =
     \\  svg [metric...]     SVG chart to stdout (default: bat psys pkg cpu temp)
     \\  csv                 export samples as CSV for other tools
     \\  info                database and recorder status
+    \\  bar                 one short line for status bars, from the recorder's latest sample
     \\  version             print the version
     \\
     \\options:
@@ -122,6 +124,7 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     if (std.mem.eql(u8, cmd, "svg")) return query(&o, .svg);
     if (std.mem.eql(u8, cmd, "csv")) return query(&o, .csv);
     if (std.mem.eql(u8, cmd, "info")) return info(&o);
+    if (std.mem.eql(u8, cmd, "bar")) return bar();
     if (std.mem.eql(u8, cmd, "version") or std.mem.eql(u8, cmd, "--version")) {
         out("powermon {s}\n", .{version});
         return 0;
@@ -168,6 +171,8 @@ fn record(o: *const Opts) u8 {
     };
     writePid(o.pid_path);
     const flush_fd = sys.fifo(FLUSH_FIFO, 0o622) catch -1; // world-writable, read by us only
+    // Latest sample, overwritten in place on /run (tmpfs, memory only) for `powermon bar`.
+    const latest_fd = sys.open(LATEST, sys.O_RDWR | sys.O_CREAT | sys.O_TRUNC, 0o644) catch -1;
     const mask = sys.sigmask(&.{ sys.SIGTERM, sys.SIGINT, sys.SIGHUP, sys.SIGUSR1 });
     sys.blockSignals(mask);
 
@@ -232,6 +237,7 @@ fn record(o: *const Opts) u8 {
             continue;
         }
         buf[n] = s.sample(interval_ns * 3);
+        if (latest_fd >= 0) sys.pwrite(latest_fd, std.mem.asBytes(&buf[n]), 0) catch {};
         n += 1;
         if (n == buf.len) {
             flushBuf(w, buf, &n);
@@ -357,6 +363,35 @@ fn query(o: *const Opts, kind: Kind) u8 {
             report.svg(recs, if (o.npos > 0) o.pos[0..o.npos] else &def, rd.header.interval_ms);
         },
     }
+    return 0;
+}
+
+/// "9.8W" (platform power), plus the estimated time left when on battery: "9.8W 5h12m".
+/// Prints "-" when the recorder is not running or its sample is stale.
+fn bar() u8 {
+    var r: db.Record = undefined;
+    const fd = sys.open(LATEST, sys.O_RDONLY, 0) catch {
+        sys.outRaw("-\n");
+        return 0;
+    };
+    const n = sys.pread(fd, std.mem.asBytes(&r), 0) catch 0;
+    sys.close(fd);
+    const now_ms = @divTrunc(sys.nowNs(sys.CLOCK_REALTIME), std.time.ns_per_ms);
+    if (n != @sizeOf(db.Record) or now_ms - r.ts_ms > 60_000) {
+        sys.outRaw("-\n");
+        return 0;
+    }
+    const w_mw = if (r.psys_mw != db.NA32) r.psys_mw else r.bat_mw;
+    if (w_mw == db.NA32) {
+        sys.outRaw("-\n");
+        return 0;
+    }
+    out("{d:.1}W", .{@as(f64, @floatFromInt(w_mw)) / 1000.0});
+    if (r.status == @intFromEnum(db.Status.discharging) and r.bat_mw != db.NA32 and r.bat_mw > 0 and r.bat_mwh != db.NA32) {
+        const mins: u64 = @as(u64, r.bat_mwh) * 60 / r.bat_mw;
+        out(" {d}h{d:0>2}m", .{ mins / 60, mins % 60 });
+    }
+    sys.outRaw("\n");
     return 0;
 }
 

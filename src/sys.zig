@@ -220,3 +220,7 @@ pub fn fifo(path: [*:0]const u8, mode: u32) !i32 {
     _ = linux.syscall2(.fchmod, @bitCast(@as(isize, fd)), mode); // umask-proof
     return fd;
 }
+
+pub fn pwrite(fd: i32, data: []const u8, off: u64) !void {
+    _ = try check(linux.syscall4(.pwrite64, @bitCast(@as(isize, fd)), @intFromPtr(data.ptr), data.len, off));
+}

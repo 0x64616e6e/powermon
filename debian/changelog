@@ -1,3 +1,11 @@
+powermon (0.2.0-1) unstable; urgency=medium
+
+  * bar: one short line for status bars (platform power, time left on
+    battery), read from /run/powermon/latest, which the recorder overwrites
+    in memory after every sample; the database stays batched.
+
+ -- 0x64616e6e <daniel@este.systems>  Wed, 23 Sep 2026 17:30:00 +0400
+
 powermon (0.1.0-1) unstable; urgency=medium
 
   * Initial release: recorder service, append-only time series store,
