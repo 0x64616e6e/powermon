@@ -100,10 +100,10 @@ Each [release](https://github.com/0x64616e6e/powermon/releases) carries a Debian
 static x86_64 Linux binary (musl, no dependencies) and `SHA256SUMS`:
 
 ```
-curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.2.1/powermon_0.2.1-1_amd64.deb
-curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.2.1/SHA256SUMS
+curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.2.2/powermon_0.2.2-1_amd64.deb
+curl -LO https://github.com/0x64616e6e/powermon/releases/download/v0.2.2/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
-sudo apt install ./powermon_0.2.1-1_amd64.deb
+sudo apt install ./powermon_0.2.2-1_amd64.deb
 ```
 
 The static binary runs anywhere for the query commands and `now`; to record in the background, use
@@ -116,7 +116,7 @@ Build it yourself (needs zig 0.16 in `PATH`, plus `debhelper`):
 
 ```
 dpkg-buildpackage -us -uc -b        # writes ../powermon_<version>_amd64.deb
-sudo apt install ../powermon_0.2.1-1_amd64.deb
+sudo apt install ../powermon_0.2.2-1_amd64.deb
 ```
 
 The package installs `/usr/bin/powermon`, the `powermon` system user (via sysusers) and
