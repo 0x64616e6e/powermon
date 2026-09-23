@@ -11,7 +11,7 @@ const DEFAULT_DB = "/var/lib/powermon/power.db";
 const DEFAULT_PID = "/run/powermon/pid";
 const FLUSH_FIFO = "/run/powermon/flush";
 const LATEST = "/run/powermon/latest";
-const version = "0.2.1";
+const version = "0.2.2";
 
 const usage =
     \\usage: powermon <command> [options]

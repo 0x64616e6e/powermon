@@ -1,3 +1,10 @@
+powermon (0.2.2-1) unstable; urgency=medium
+
+  * svg: bottom margin so the start and end time labels no longer overlap
+    the last panel.
+
+ -- 0x64616e6e <daniel@este.systems>  Wed, 23 Sep 2026 17:45:00 +0400
+
 powermon (0.2.1-1) unstable; urgency=medium
 
   * plot: bars grow from a zero baseline; with mixed signs (battery charging
