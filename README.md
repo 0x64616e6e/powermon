@@ -73,8 +73,8 @@ sudo apt install ../powermon_0.1.0-1_amd64.deb
 ```
 
 The package installs `/usr/bin/powermon`, the `powermon` system user (via sysusers) and
-`powermon.service`, which it enables and starts. Removing the package stops the service;
-`apt purge` also removes nothing else, and the database in `/var/lib/powermon` is kept.
+`powermon.service`, which it enables and starts. Removing or purging the package stops and removes
+the service; the database in `/var/lib/powermon` is kept.
 
 ### From source (any systemd distribution)
 
