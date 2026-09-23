@@ -1,3 +1,11 @@
 zig-out/
 .zig-cache/
 *.db
+debian/.debhelper/
+debian/powermon/
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/*.log
+debian/debhelper-build-stamp
+.zig-cache-global/

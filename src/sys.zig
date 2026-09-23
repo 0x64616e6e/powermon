@@ -194,3 +194,29 @@ pub fn capEffective() u64 {
     _ = linux.syscall2(.capget, @intFromPtr(&h), @intFromPtr(&d));
     return @as(u64, d[0].effective) | (@as(u64, d[1].effective) << 32);
 }
+
+// ---- event waiting: signalfd + FIFO under ppoll ----
+pub fn signalfd(mask: u64) !i32 {
+    var m = mask;
+    return @intCast(try check(linux.syscall4(.signalfd4, @bitCast(@as(isize, -1)), @intFromPtr(&m), 8, O_CLOEXEC | 0o4000))); // SFD_NONBLOCK
+}
+
+pub const PollFd = extern struct { fd: i32, events: i16 = 1, revents: i16 = 0 }; // POLLIN
+
+/// Wait up to `ns` for input on any of `fds`; returns the number ready (0 = timeout).
+pub fn ppoll(fds: []PollFd, ns: i64) usize {
+    var ts = Timespec{ .sec = @divTrunc(ns, std.time.ns_per_s), .nsec = @mod(ns, std.time.ns_per_s) };
+    const rc = linux.syscall5(.ppoll, @intFromPtr(fds.ptr), fds.len, @intFromPtr(&ts), 0, 8);
+    const s: isize = @bitCast(rc);
+    return if (s < 0) 0 else @intCast(s);
+}
+
+/// Create (or recreate) a FIFO at `path` with exact `mode`, and hold it open read-write so
+/// writers never block and the recorder never sees EOF.
+pub fn fifo(path: [*:0]const u8, mode: u32) !i32 {
+    _ = linux.syscall3(.unlinkat, @bitCast(AT_FDCWD), @intFromPtr(path), 0);
+    _ = try check(linux.syscall4(.mknodat, @bitCast(AT_FDCWD), @intFromPtr(path), 0o010000 | mode, 0)); // S_IFIFO
+    const fd = try open(path, O_RDWR | 0o4000, 0); // O_NONBLOCK
+    _ = linux.syscall2(.fchmod, @bitCast(@as(isize, fd)), mode); // umask-proof
+    return fd;
+}

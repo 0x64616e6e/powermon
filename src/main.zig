@@ -9,6 +9,8 @@ const out = sys.out;
 
 const DEFAULT_DB = "/var/lib/powermon/power.db";
 const DEFAULT_PID = "/run/powermon/pid";
+const FLUSH_FIFO = "/run/powermon/flush";
+const version = "0.1.0";
 
 const usage =
     \\usage: powermon <command> [options]
@@ -20,6 +22,7 @@ const usage =
     \\  svg [metric...]     SVG chart to stdout (default: bat psys pkg cpu temp)
     \\  csv                 export samples as CSV for other tools
     \\  info                database and recorder status
+    \\  version             print the version
     \\
     \\options:
     \\  --db PATH           database (default /var/lib/powermon/power.db)
@@ -119,6 +122,10 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     if (std.mem.eql(u8, cmd, "svg")) return query(&o, .svg);
     if (std.mem.eql(u8, cmd, "csv")) return query(&o, .csv);
     if (std.mem.eql(u8, cmd, "info")) return info(&o);
+    if (std.mem.eql(u8, cmd, "version") or std.mem.eql(u8, cmd, "--version")) {
+        out("powermon {s}\n", .{version});
+        return 0;
+    }
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "-h") or std.mem.eql(u8, cmd, "--help")) {
         printUsage();
         return 0;
@@ -160,6 +167,7 @@ fn record(o: *const Opts) u8 {
         return 1;
     };
     writePid(o.pid_path);
+    const flush_fd = sys.fifo(FLUSH_FIFO, 0o622) catch -1; // world-writable, read by us only
     const mask = sys.sigmask(&.{ sys.SIGTERM, sys.SIGINT, sys.SIGHUP, sys.SIGUSR1 });
     sys.blockSignals(mask);
 
@@ -182,27 +190,53 @@ fn record(o: *const Opts) u8 {
     var n: usize = 0;
     sys.err("powermon: recording to {s} every {d} s, writing every {d} samples\n", .{ o.db_path, o.interval_s, o.flush_n });
 
+    // Wake-ups: signals through a signalfd, flush requests from any local user through a FIFO
+    // (a query can then flush a recorder running under another uid). Both waited on with ppoll.
+    const sfd = sys.signalfd(mask) catch {
+        sys.err("powermon: signalfd failed (errno {d})\n", .{sys.last_errno});
+        return 1;
+    };
+    var fds = [2]sys.PollFd{ .{ .fd = sfd }, .{ .fd = flush_fd } };
+    const nfds: usize = if (flush_fd >= 0) 2 else 1;
+    var last_flush: i64 = 0;
+
     var next = sys.nowNs(sys.CLOCK_BOOTTIME) + interval_ns;
     while (true) {
         const t = sys.nowNs(sys.CLOCK_BOOTTIME);
         if (t < next) {
-            switch (sys.waitSignal(mask, next - t)) {
-                0 => {},
-                sys.SIGUSR1 => {
+            for (fds[0..nfds]) |*f| f.revents = 0;
+            if (sys.ppoll(fds[0..nfds], next - t) == 0) continue;
+            if (fds[0].revents != 0) {
+                var si: [128]u8 = undefined; // struct signalfd_siginfo; ssi_signo is the first u32
+                const got = sys.read(sfd, &si) catch 0;
+                if (got >= 4) {
+                    const signo = std.mem.readInt(u32, si[0..4], .little);
+                    if (signo == sys.SIGUSR1) {
+                        flushBuf(w, buf, &n);
+                        last_flush = t;
+                    } else {
+                        flushBuf(w, buf, &n);
+                        sys.err("powermon: stopped\n", .{});
+                        return 0;
+                    }
+                }
+            }
+            if (nfds == 2 and fds[1].revents != 0) {
+                var junk: [64]u8 = undefined;
+                while ((sys.read(flush_fd, &junk) catch 0) > 0) {}
+                if (t - last_flush >= std.time.ns_per_s) { // at most one flush a second, whoever asks
                     flushBuf(w, buf, &n);
-                    continue;
-                },
-                else => {
-                    flushBuf(w, buf, &n);
-                    sys.err("powermon: stopped\n", .{});
-                    return 0;
-                },
+                    last_flush = t;
+                }
             }
             continue;
         }
         buf[n] = s.sample(interval_ns * 3);
         n += 1;
-        if (n == buf.len) flushBuf(w, buf, &n);
+        if (n == buf.len) {
+            flushBuf(w, buf, &n);
+            last_flush = t;
+        }
         next += interval_ns;
         if (next < t) next = t + interval_ns; // woke from suspend or fell behind: realign
     }
@@ -243,8 +277,17 @@ fn writePid(path: []const u8) void {
     sys.writeAll(fd, std.fmt.bufPrint(&b, "{d}\n", .{sys.getpid()}) catch return) catch {};
 }
 
-/// Ask a running recorder to write its in-memory buffer so queries see the latest samples.
+/// Ask a running recorder to write its in-memory buffer so queries see the latest samples: a byte
+/// into its FIFO (works across users), else SIGUSR1 through the pidfile (same user or root).
 fn requestFlush(path: []const u8) bool {
+    if (sys.open(FLUSH_FIFO, sys.O_WRONLY | 0o4000, 0)) |ff| { // O_NONBLOCK: ENXIO if no recorder
+        const ok = if (sys.writeAll(ff, "f")) true else |_| false;
+        sys.close(ff);
+        if (ok) {
+            sys.sleepNs(150 * std.time.ns_per_ms);
+            return true;
+        }
+    } else |_| {}
     const fd = sys.openPath(path, sys.O_RDONLY, 0) catch return false;
     var b: [16]u8 = undefined;
     const n = sys.pread(fd, &b, 0) catch 0;

@@ -1,13 +1,14 @@
 [Unit]
 Description=powermon power recorder
-Documentation=file:///home/dann/code/powermon/README.md
+Documentation=https://github.com/0x64616e6e/powermon
 After=power-profiles-daemon.service
 
 [Service]
 # Starts as root only to open the RAPL perf counters (Debian's perf_event_paranoid=3 admits
-# CAP_SYS_ADMIN and nothing less), then switches to the desktop user with no capabilities at all.
-# Running as that user also lets `powermon stats` etc. signal it to flush its buffer.
-ExecStart=/usr/local/bin/powermon record --user dann
+# CAP_SYS_ADMIN and nothing less), then switches to the unprivileged system user "powermon"
+# (see powermon.sysusers) and verifies it holds no capabilities. Queries from any user ask it to
+# flush its buffer through the FIFO /run/powermon/flush.
+ExecStart=/usr/bin/powermon record --user powermon
 ExecReload=/bin/kill -USR1 $MAINPID
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID
 NoNewPrivileges=yes

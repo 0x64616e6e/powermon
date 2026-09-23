@@ -1,0 +1,9 @@
+powermon (0.1.0-1) unstable; urgency=medium
+
+  * Initial release: recorder service, append-only time series store,
+    stats / plot / svg / csv / now / info queries.
+  * Recorder opens the RAPL perf counters as root, then runs as the
+    "powermon" system user with no capabilities.
+  * Flush requests from any local user through /run/powermon/flush.
+
+ -- 0x64616e6e <daniel@este.systems>  Wed, 23 Sep 2026 17:10:00 +0400

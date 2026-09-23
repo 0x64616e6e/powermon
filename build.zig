@@ -13,5 +13,6 @@ pub fn build(b: *std.Build) void {
             .strip = optimize != .Debug,
         }),
     });
+    exe.pie = true; // position-independent, for ASLR (Debian hardening)
     b.installArtifact(exe);
 }

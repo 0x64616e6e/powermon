@@ -1,0 +1,24 @@
+Source: powermon
+Section: admin
+Priority: optional
+Maintainer: 0x64616e6e <daniel@este.systems>
+# also needs zig 0.16 in PATH at build time (not packaged in Debian 13)
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Homepage: https://github.com/0x64616e6e/powermon
+Vcs-Git: https://github.com/0x64616e6e/powermon.git
+Vcs-Browser: https://github.com/0x64616e6e/powermon
+Rules-Requires-Root: no
+
+Package: powermon
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: minimal laptop power monitor with a built-in time series store
+ powermon records battery power, Intel RAPL energy (platform, package,
+ cores, GPU), CPU load, temperature, fan speed, battery charge and backlight
+ every few seconds into a compact append-only time series file, without
+ file system I/O on the sampling path. It answers queries with statistics,
+ terminal charts, SVG and CSV export.
+ .
+ The recorder runs as a systemd service: it opens the perf counters as root
+ and then switches to the unprivileged "powermon" user.

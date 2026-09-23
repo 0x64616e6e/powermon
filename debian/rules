@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+# Zig builds a stripped release binary itself; keep its cache inside the source tree.
+export ZIG_GLOBAL_CACHE_DIR = $(CURDIR)/.zig-cache-global
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	zig build -Drelease
+
+override_dh_auto_install:
+	install -D -m 755 zig-out/bin/powermon debian/powermon/usr/bin/powermon
+
+override_dh_auto_clean:
+	rm -rf zig-out .zig-cache .zig-cache-global
+
+override_dh_auto_test:
+
+# sysusers is only in the default dh sequence from compat 14
+execute_before_dh_installsystemd:
+	dh_installsysusers

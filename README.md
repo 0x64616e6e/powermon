@@ -62,16 +62,50 @@ Durations: `90s 30m 6h 2d 1w` or `all`; `--until` takes the same form as "time a
 
 ## Install
 
+### Debian / Ubuntu package
+
+Download the `.deb` from the releases page, or build it (needs zig 0.16 in `PATH`, plus
+`debhelper`):
+
 ```
-contrib/install.sh
+dpkg-buildpackage -us -uc -b        # writes ../powermon_<version>_amd64.deb
+sudo apt install ../powermon_0.1.0-1_amd64.deb
 ```
 
-builds a release binary, installs `/usr/local/bin/powermon` and `powermon.service`, and starts it.
-Debian sets `perf_event_paranoid=3` and its kernel patch then admits only `CAP_SYS_ADMIN` to
-`perf_event_open` (`CAP_PERFMON` is not enough). So the service starts as root, opens the four RAPL
-counters and the database, then `--user dann` switches uid/gid/groups for good, which clears every
-capability; the recorder verifies that and refuses to run otherwise. It sees a read-only file system
-except its state and runtime directories, and has no network.
+The package installs `/usr/bin/powermon`, the `powermon` system user (via sysusers) and
+`powermon.service`, which it enables and starts. Removing the package stops the service;
+`apt purge` also removes nothing else, and the database in `/var/lib/powermon` is kept.
+
+### From source (any systemd distribution)
+
+```
+contrib/install.sh      # zig build, /usr/local/bin/powermon, system user, service enabled and started
+contrib/uninstall.sh    # removes them again, keeps the database
+```
+
+## The service
+
+```
+systemctl status powermon          # state
+journalctl -u powermon             # log: RAPL availability, the user it switched to
+sudo systemctl stop powermon       # pause recording (the buffer is written first)
+sudo systemctl disable --now powermon
+sudo systemctl edit powermon       # e.g. ExecStart=/usr/bin/powermon record --user powermon --interval 2
+```
+
+`powermon.service` (in `contrib/`, used by the package too) starts the recorder as root only to
+open the RAPL perf counters: Debian sets `perf_event_paranoid=3`, and its kernel patch then admits
+only `CAP_SYS_ADMIN` to `perf_event_open` (`CAP_PERFMON` is not enough). It then switches uid, gid
+and groups to the `powermon` system user for good, which clears every capability, and refuses to run
+if any survive. It has no network and sees a read-only file system except `/var/lib/powermon` and
+`/run/powermon`.
+
+Queries from any user ask the recorder to write its in-memory buffer by writing a byte to the FIFO
+`/run/powermon/flush` (at most one flush per second), so results always include the last few seconds.
+`systemctl reload powermon` does the same through `SIGUSR1`.
+
+On distributions with `perf_event_paranoid` of 2 or less (Fedora, Arch, upstream default), the root
+start is still used and still ends in the same unprivileged state.
 
 ## License
 
