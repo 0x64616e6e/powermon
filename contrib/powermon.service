@@ -1,0 +1,28 @@
+[Unit]
+Description=powermon power recorder
+Documentation=file:///home/dann/code/powermon/README.md
+After=power-profiles-daemon.service
+
+[Service]
+# Runs as the desktop user so `powermon stats` etc. can signal it to flush its buffer;
+# CAP_PERFMON is the only extra right, needed for the RAPL perf counters.
+User=dann
+ExecStart=/usr/local/bin/powermon record
+ExecReload=/bin/kill -USR1 $MAINPID
+AmbientCapabilities=CAP_PERFMON
+CapabilityBoundingSet=CAP_PERFMON
+NoNewPrivileges=yes
+StateDirectory=powermon
+StateDirectoryMode=0755
+RuntimeDirectory=powermon
+RuntimeDirectoryMode=0755
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+Nice=10
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
