@@ -4,13 +4,12 @@ Documentation=file:///home/dann/code/powermon/README.md
 After=power-profiles-daemon.service
 
 [Service]
-# Runs as the desktop user so `powermon stats` etc. can signal it to flush its buffer;
-# CAP_PERFMON is the only extra right, needed for the RAPL perf counters.
-User=dann
-ExecStart=/usr/local/bin/powermon record
+# Starts as root only to open the RAPL perf counters (Debian's perf_event_paranoid=3 admits
+# CAP_SYS_ADMIN and nothing less), then switches to the desktop user with no capabilities at all.
+# Running as that user also lets `powermon stats` etc. signal it to flush its buffer.
+ExecStart=/usr/local/bin/powermon record --user dann
 ExecReload=/bin/kill -USR1 $MAINPID
-AmbientCapabilities=CAP_PERFMON
-CapabilityBoundingSet=CAP_PERFMON
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID
 NoNewPrivileges=yes
 StateDirectory=powermon
 StateDirectoryMode=0755

@@ -171,3 +171,26 @@ pub fn err(comptime fmt: []const u8, args: anytype) void {
     const s = std.fmt.bufPrint(&tmp, fmt, args) catch tmp[0..];
     writeAll(2, s) catch {};
 }
+
+// ---- privilege drop ----
+pub fn setgroupsEmpty() !void {
+    _ = try check(linux.syscall2(.setgroups, 0, 0));
+}
+pub fn setresgid(g: u32) !void {
+    _ = try check(linux.syscall3(.setresgid, g, g, g));
+}
+pub fn setresuid(u: u32) !void {
+    _ = try check(linux.syscall3(.setresuid, u, u, u));
+}
+pub fn getuid() u32 {
+    return @intCast(linux.syscall0(.getuid));
+}
+/// Effective capability set of this process (first 32 bits suffice for the check).
+pub fn capEffective() u64 {
+    const Hdr = extern struct { version: u32 = 0x20080522, pid: i32 = 0 };
+    const Data = extern struct { effective: u32, permitted: u32, inheritable: u32 };
+    var h = Hdr{};
+    var d: [2]Data = undefined;
+    _ = linux.syscall2(.capget, @intFromPtr(&h), @intFromPtr(&d));
+    return @as(u64, d[0].effective) | (@as(u64, d[1].effective) << 32);
+}

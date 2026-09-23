@@ -67,6 +67,8 @@ contrib/install.sh
 ```
 
 builds a release binary, installs `/usr/local/bin/powermon` and `powermon.service`, and starts it.
-The service runs as the desktop user with only `CAP_PERFMON` added (Debian sets
-`perf_event_paranoid=3`, so RAPL counters need it) and a read-only view of the file system except
-its state and runtime directories.
+Debian sets `perf_event_paranoid=3` and its kernel patch then admits only `CAP_SYS_ADMIN` to
+`perf_event_open` (`CAP_PERFMON` is not enough). So the service starts as root, opens the four RAPL
+counters and the database, then `--user dann` switches uid/gid/groups for good, which clears every
+capability; the recorder verifies that and refuses to run otherwise. It sees a read-only file system
+except its state and runtime directories, and has no network.

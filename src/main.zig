@@ -29,6 +29,8 @@ const usage =
     \\  --flush N           record: samples buffered in memory between writes (default 60)
     \\  --width N --height N   plot size (default terminal width x 12)
     \\  --no-flush          query without asking the recorder to write its buffer first
+    \\  --user NAME         record: started as root, open the perf counters, then run as NAME
+    \\                      with no capabilities (Debian's perf_event_paranoid=3 needs root to open them)
     \\
     \\metrics:
     \\
@@ -44,6 +46,7 @@ const Opts = struct {
     width: ?usize = null,
     height: usize = 12,
     no_flush: bool = false,
+    user: ?[]const u8 = null,
     pos: [16][]const u8 = undefined,
     npos: usize = 0,
 };
@@ -92,6 +95,8 @@ pub fn main(init: std.process.Init.Minimal) u8 {
         } else if (std.mem.eql(u8, a, "--height")) {
             const v = val(argv, &i, a) orelse return 2;
             o.height = std.math.clamp(std.fmt.parseInt(usize, v, 10) catch return badArg(a, v), 2, 100);
+        } else if (std.mem.eql(u8, a, "--user")) {
+            o.user = val(argv, &i, a) orelse return 2;
         } else if (std.mem.eql(u8, a, "--no-flush")) {
             o.no_flush = true;
         } else if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) {
@@ -159,7 +164,18 @@ fn record(o: *const Opts) u8 {
     sys.blockSignals(mask);
 
     var s = Sampler.init();
-    for (s.rapl_fd, 0..) |fd, i| if (fd < 0) sys.err("powermon: RAPL {s} unavailable (errno {d}; needs CAP_PERFMON)\n", .{ rapl_names[i], s.rapl_err[i] });
+    for (s.rapl_fd, 0..) |fd, i| if (fd < 0) sys.err("powermon: RAPL {s} unavailable (errno {d}; start as root with --user)\n", .{ rapl_names[i], s.rapl_err[i] });
+    if (o.user) |name| {
+        dropTo(name) catch |e| {
+            sys.err("powermon: cannot switch to user {s}: {s} (errno {d})\n", .{ name, @errorName(e), sys.last_errno });
+            return 1;
+        };
+        if (sys.capEffective() != 0) {
+            sys.err("powermon: capabilities survived the switch to {s}; refusing to run\n", .{name});
+            return 1;
+        }
+        sys.err("powermon: running as {s} (uid {d}), no capabilities\n", .{ name, sys.getuid() });
+    }
     _ = s.sample(interval_ns * 3); // prime the deltas; not stored
 
     const buf = std.heap.page_allocator.alloc(db.Record, o.flush_n) catch return 1;
@@ -190,6 +206,29 @@ fn record(o: *const Opts) u8 {
         next += interval_ns;
         if (next < t) next = t + interval_ns; // woke from suspend or fell behind: realign
     }
+}
+
+/// Look NAME up in /etc/passwd and switch uid/gid/groups to it. From root this clears every
+/// capability (permitted, effective, ambient); the perf and database descriptors stay open.
+fn dropTo(name: []const u8) !void {
+    const fd = try sys.open("/etc/passwd", sys.O_RDONLY, 0);
+    defer sys.close(fd);
+    var buf: [65536]u8 = undefined;
+    const n = try sys.pread(fd, &buf, 0);
+    var lines = std.mem.splitScalar(u8, buf[0..n], '\n');
+    while (lines.next()) |line| {
+        var f = std.mem.splitScalar(u8, line, ':');
+        const user = f.next() orelse continue;
+        if (!std.mem.eql(u8, user, name)) continue;
+        _ = f.next();
+        const uid = std.fmt.parseInt(u32, f.next() orelse return error.BadPasswd, 10) catch return error.BadPasswd;
+        const gid = std.fmt.parseInt(u32, f.next() orelse return error.BadPasswd, 10) catch return error.BadPasswd;
+        try sys.setgroupsEmpty();
+        try sys.setresgid(gid);
+        try sys.setresuid(uid);
+        return;
+    }
+    return error.NoSuchUser;
 }
 
 fn flushBuf(w: db.Writer, buf: []db.Record, n: *usize) void {
@@ -228,7 +267,7 @@ fn now() u8 {
     const st = [_][]const u8{ "unknown", "discharging", "charging", "not charging", "full" };
     const pr = [_][]const u8{ "unknown", "low-power", "balanced", "performance" };
     out("status  {s}, profile {s}\n", .{ st[@min(r.status, 4)], pr[@min(r.profile, 3)] });
-    for (s.rapl_fd, 0..) |fd, i| if (fd < 0) out("note: RAPL {s} unavailable (errno {d}); run with CAP_PERFMON or as root\n", .{ rapl_names[i], s.rapl_err[i] });
+    for (s.rapl_fd, 0..) |fd, i| if (fd < 0) out("note: RAPL {s} unavailable (errno {d}); run as root\n", .{ rapl_names[i], s.rapl_err[i] });
     return 0;
 }
 
