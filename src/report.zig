@@ -342,7 +342,7 @@ pub fn svg(recs: []const db.Record, names: []const []const u8, interval_ms: u32)
     const MR: usize = 20;
     const plot_w = W - ML - MR;
     const n_panels = names.len;
-    const H = 40 + n_panels * (PH + 30);
+    const H = 40 + n_panels * (PH + 30) + 18; // bottom margin for the time labels
     out("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{d}\" height=\"{d}\" font-family=\"IBM Plex Mono, monospace\" font-size=\"11\">\n", .{ W, H });
     out("<rect width=\"100%\" height=\"100%\" fill=\"#0B0C0E\"/>\n", .{});
     if (recs.len == 0) {

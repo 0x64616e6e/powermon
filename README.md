@@ -4,6 +4,37 @@ A minimal power monitor for Linux laptops, written in Zig 0.16. One small static
 power metrics into its own time series file and answers questions about them: statistics, terminal
 charts, SVG, CSV.
 
+## Screenshots
+
+`powermon stats`: distribution per metric, energy, and battery drain per power profile
+
+![powermon stats](docs/stats.png)
+
+`powermon plot psys bat`: terminal charts; battery power hangs below zero while charging
+
+![powermon plot](docs/plot.png)
+
+`powermon svg`: the same data as a multi-panel SVG
+
+![powermon svg](docs/powermon.svg)
+
+`sudo powermon now` (the RAPL counters need root outside the service; the other metrics do not):
+
+```
+bat          6.85 W    battery power (+ discharging, - charging)
+psys         6.06 W    RAPL platform (SoC, memory, ...)
+pkg          3.47 W    RAPL CPU package
+cores        0.15 W    RAPL CPU cores
+gpu          0.12 W    RAPL integrated GPU
+cpu          2.70 %    CPU busy
+temp        48.00 C    CPU package temperature
+fan          0.00 rpm  fan speed
+pct         75.00 %    battery charge
+wh          43.17 Wh   battery energy remaining
+bright       9.00 %    backlight
+status  discharging, profile low-power
+```
+
 ## What it records
 
 Every 5 seconds by default, one 48-byte record:
@@ -49,7 +80,7 @@ trivial to read from other languages (see `src/db.zig`), and `powermon csv` expo
 ## Usage
 
 ```
-powermon now                      # one 1-second sample
+powermon now                      # one 1-second sample (RAPL values need root)
 powermon stats                    # last 24 h: min/p50/mean/p95/max, energy, drain per profile
 powermon stats --since 7d
 powermon plot bat psys --since 2h # terminal charts
